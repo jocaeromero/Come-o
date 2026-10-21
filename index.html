@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prompt Maker</title>
+  <meta name="description" content="Monte prompts estruturados para IAs de texto e de imagem, com opção de melhorar com o Claude.">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">✦</span>
+      <h1>Prompt Maker</h1>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" role="tab" aria-selected="true" data-mode="text">📝 Texto</button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="image">🎨 Imagem</button>
+    </nav>
+    <button class="icon-btn" id="openSettings" title="Configurar IA">⚙️ <span>IA</span></button>
+  </header>
+
+  <main class="layout">
+    <!-- ===== Formulário ===== -->
+    <section class="panel form-panel">
+      <div class="presets">
+        <label for="presetSelect">Começar de um modelo</label>
+        <select id="presetSelect"></select>
+      </div>
+
+      <!-- Texto -->
+      <form id="textForm" class="mode-form" data-mode="text" autocomplete="off">
+        <div class="field">
+          <label for="t-task">Tarefa / objetivo <span class="req">*</span></label>
+          <textarea id="t-task" name="task" rows="3" placeholder="Ex.: Escreva uma legenda para um post de lançamento da nossa nova cafeteria"></textarea>
+        </div>
+        <div class="field">
+          <label for="t-role">Papel da IA</label>
+          <input id="t-role" name="role" list="roleList" placeholder="Ex.: um redator publicitário experiente">
+          <datalist id="roleList">
+            <option value="um redator publicitário experiente">
+            <option value="um engenheiro de software sênior">
+            <option value="um professor paciente e didático">
+            <option value="um analista de dados">
+            <option value="um especialista em marketing digital">
+            <option value="um revisor de textos rigoroso">
+            <option value="um consultor de negócios">
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="t-context">Contexto</label>
+          <textarea id="t-context" name="context" rows="3" placeholder="Informações de fundo, dados, situação, o que já foi feito…"></textarea>
+        </div>
+        <div class="field">
+          <label for="t-audience">Público-alvo</label>
+          <input id="t-audience" name="audience" placeholder="Ex.: jovens de 20 a 30 anos que trabalham de casa">
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="t-format">Formato da resposta</label>
+            <select id="t-format" name="format"></select>
+          </div>
+          <div class="field">
+            <label for="t-tone">Tom</label>
+            <select id="t-tone" name="tone"></select>
+          </div>
+          <div class="field">
+            <label for="t-length">Tamanho</label>
+            <select id="t-length" name="length"></select>
+          </div>
+          <div class="field">
+            <label for="t-lang">Idioma da resposta</label>
+            <select id="t-lang" name="answerLang"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="t-constraints">Restrições / o que evitar <small>(uma por linha)</small></label>
+          <textarea id="t-constraints" name="constraints" rows="3" placeholder="Não usar jargões&#10;No máximo 3 emojis"></textarea>
+        </div>
+        <div class="field">
+          <label for="t-examples">Exemplos de referência</label>
+          <textarea id="t-examples" name="examples" rows="3" placeholder="Cole um exemplo do resultado que você gosta"></textarea>
+        </div>
+        <fieldset class="checks">
+          <legend>Instruções extras</legend>
+          <label><input type="checkbox" name="stepByStep"> Pensar passo a passo antes de responder</label>
+          <label><input type="checkbox" name="askQuestions"> Fazer perguntas se faltar informação</label>
+          <label><input type="checkbox" name="sources"> Citar fontes / indicar incertezas</label>
+          <label><input type="checkbox" name="variations"> Oferecer 3 variações</label>
+        </fieldset>
+        <div class="grid-2">
+          <div class="field">
+            <label for="t-structure">Estrutura do prompt</label>
+            <select id="t-structure" name="structure">
+              <option value="markdown">Títulos em Markdown</option>
+              <option value="xml">Tags XML (ótimo p/ Claude)</option>
+              <option value="plain">Texto simples</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="t-promptLang">Idioma do prompt</label>
+            <select id="t-promptLang" name="promptLang">
+              <option value="pt">Português</option>
+              <option value="en">Inglês</option>
+            </select>
+          </div>
+        </div>
+      </form>
+
+      <!-- Imagem -->
+      <form id="imageForm" class="mode-form" data-mode="image" autocomplete="off" hidden>
+        <div class="field">
+          <label for="i-subject">Assunto principal <span class="req">*</span></label>
+          <textarea id="i-subject" name="subject" rows="2" placeholder="Ex.: a red fox wearing a scarf"></textarea>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="i-action">Ação / pose</label>
+            <input id="i-action" name="action" placeholder="Ex.: reading a book">
+          </div>
+          <div class="field">
+            <label for="i-setting">Cenário</label>
+            <input id="i-setting" name="setting" placeholder="Ex.: cozy library at night">
+          </div>
+          <div class="field">
+            <label for="i-style">Estilo</label>
+            <select id="i-style" name="style" data-bilingual></select>
+          </div>
+          <div class="field">
+            <label for="i-light">Iluminação</label>
+            <select id="i-light" name="lighting" data-bilingual></select>
+          </div>
+          <div class="field">
+            <label for="i-camera">Câmera / enquadramento</label>
+            <select id="i-camera" name="camera" data-bilingual></select>
+          </div>
+          <div class="field">
+            <label for="i-mood">Clima</label>
+            <select id="i-mood" name="mood" data-bilingual></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="i-palette">Paleta de cores</label>
+          <input id="i-palette" name="palette" placeholder="Ex.: warm oranges and deep teal">
+        </div>
+        <div class="field">
+          <label for="i-details">Detalhes e qualidade</label>
+          <input id="i-details" name="details" placeholder="Ex.: highly detailed fur, shallow depth of field">
+        </div>
+        <div class="field">
+          <label for="i-negative">Evitar (prompt negativo)</label>
+          <input id="i-negative" name="negative" placeholder="Ex.: text, watermark, blurry, extra fingers">
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="i-ratio">Proporção</label>
+            <select id="i-ratio" name="ratio">
+              <option value="">— padrão —</option>
+              <option value="1:1">1:1 quadrado</option>
+              <option value="4:5">4:5 feed Instagram</option>
+              <option value="9:16">9:16 stories / reels</option>
+              <option value="16:9">16:9 paisagem</option>
+              <option value="3:2">3:2 foto</option>
+              <option value="2:3">2:3 pôster</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="i-tool">Ferramenta</label>
+            <select id="i-tool" name="tool">
+              <option value="generic">Genérico</option>
+              <option value="midjourney">Midjourney</option>
+              <option value="dalle">DALL·E / GPT Image</option>
+              <option value="sd">Stable Diffusion / Flux</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="i-promptLang">Idioma do prompt</label>
+            <select id="i-promptLang" name="promptLang">
+              <option value="en">Inglês (recomendado)</option>
+              <option value="pt">Português</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint">💡 Modelos de imagem entendem melhor inglês. As opções das listas são traduzidas automaticamente; o que você digitar fica como está — o “Melhorar com IA” traduz tudo.</p>
+      </form>
+
+      <div class="form-actions">
+        <button type="button" class="btn ghost" id="clearForm">Limpar campos</button>
+      </div>
+    </section>
+
+    <!-- ===== Resultado ===== -->
+    <section class="panel output-panel">
+      <div class="output-head">
+        <h2>Seu prompt</h2>
+        <span class="counter" id="counter">0 caracteres</span>
+      </div>
+      <textarea id="output" class="output" rows="16" spellcheck="false" placeholder="Preencha o formulário e o prompt aparece aqui."></textarea>
+      <div class="actions">
+        <button class="btn primary" id="copyBtn">📋 Copiar</button>
+        <button class="btn" id="saveBtn">⭐ Salvar</button>
+        <button class="btn" id="downloadBtn">⬇️ .txt</button>
+        <button class="btn ai" id="improveBtn">✨ Melhorar com IA</button>
+      </div>
+
+      <div class="ai-box" id="aiBox" hidden>
+        <div class="output-head">
+          <h3>Versão da IA</h3>
+          <span class="status" id="aiStatus"></span>
+        </div>
+        <textarea id="aiOutput" class="output" rows="12" spellcheck="false" readonly></textarea>
+        <div class="actions">
+          <button class="btn primary" id="useAiBtn" disabled>Usar esta versão</button>
+          <button class="btn" id="copyAiBtn" disabled>📋 Copiar</button>
+          <button class="btn ghost" id="stopAiBtn" hidden>Parar</button>
+        </div>
+      </div>
+
+      <details class="history" id="historyBox">
+        <summary>Histórico salvo <span id="historyCount"></span></summary>
+        <ul id="historyList"></ul>
+      </details>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings-form">
+      <h2>Configurar IA</h2>
+      <p>O botão <strong>✨ Melhorar com IA</strong> usa o Claude, da Anthropic. Cole sua chave de API (pegue em <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>).</p>
+      <label for="apiKey">Chave de API</label>
+      <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+      <p class="hint">🔒 A chave fica salva só neste navegador e é enviada direto para a API da Anthropic. Não use este recurso em computadores compartilhados.</p>
+      <div class="actions">
+        <button class="btn ghost" value="cancel">Cancelar</button>
+        <button class="btn ghost" id="forgetKey" value="forget">Apagar chave</button>
+        <button class="btn primary" id="saveKey" value="save">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
