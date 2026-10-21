@@ -551,7 +551,12 @@ function download() {
 const MODEL = "claude-opus-5-5";
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
 let sdkPromise;
-let currentStream;
+let stopCurrent;
+
+// Dentro do claude.ai a página usa a conta do próprio visitante (capacidade
+// "sample"), sem chave de API. Fora dele, usa a chave salva em ⚙️ IA.
+const inClaudeViewer = typeof window.claude?.use === "function";
+const samplePromise = inClaudeViewer ? window.claude.use("sample") : null;
 
 const TOOL_NAMES = {
   generic: "um gerador de imagens genérico",
@@ -608,9 +613,48 @@ function errorMessage(Anthropic, err) {
   return `Erro: ${err.message || err}`;
 }
 
+const SAMPLE_ERRORS = {
+  not_granted: "Você não autorizou esta página a usar o Claude.",
+  sampling_disabled: "O Claude não está disponível nesta conta.",
+  rate_limited: "Limite de uso atingido. Espere um pouco e tente de novo.",
+  session_expired: "Sua sessão expirou. Entre de novo no claude.ai.",
+  refused: "A IA não quis responder a este pedido. Tente reformular.",
+  empty_completion: "A IA não devolveu nada. Tente de novo.",
+};
+
+async function improveWithSample(draft) {
+  const sample = await samplePromise;
+  if (!sample) return toast("A IA não está disponível nesta visualização");
+
+  const aiOutput = $("#aiOutput");
+  const ctl = new AbortController();
+  stopCurrent = () => ctl.abort();
+  $("#aiBox").hidden = false;
+  aiOutput.value = "";
+  setAiState("generating", "Pensando…");
+  try {
+    const { truncated } = await sample(`${systemPrompt()}\n\nRascunho do prompt:\n\n${draft}`, {
+      signal: ctl.signal,
+      cache: false,
+      onText: ({ text }) => {
+        aiOutput.value = text;
+        aiOutput.scrollTop = aiOutput.scrollHeight;
+      },
+    });
+    setAiState("done", truncated ? "Pronto (resposta cortada por tamanho)." : "Pronto ✨");
+  } catch (e) {
+    aiOutput.value = e.text ?? "";
+    if (e.code === "cancelled") setAiState("done", "Interrompido.");
+    else setAiState("error", SAMPLE_ERRORS[e.code] || "Falha de conexão com o Claude. Tente de novo.");
+  } finally {
+    stopCurrent = undefined;
+  }
+}
+
 async function improveWithAI() {
   const draft = output.value.trim();
   if (!draft) return toast("Preencha o formulário primeiro");
+  if (inClaudeViewer) return improveWithSample(draft);
   const apiKey = store.get("pm.apiKey", "");
   if (!apiKey) {
     openSettings();
@@ -633,7 +677,7 @@ async function improveWithAI() {
 
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   try {
-    currentStream = client.beta.messages.stream({
+    const stream = client.beta.messages.stream({
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: "medium" },
@@ -643,11 +687,12 @@ async function improveWithAI() {
       system: systemPrompt(),
       messages: [{ role: "user", content: `Rascunho do prompt:\n\n${draft}` }],
     });
-    currentStream.on("text", (delta) => {
+    stopCurrent = () => stream.abort();
+    stream.on("text", (delta) => {
       aiOutput.value += delta;
       aiOutput.scrollTop = aiOutput.scrollHeight;
     });
-    const message = await currentStream.finalMessage();
+    const message = await stream.finalMessage();
 
     if (message.stop_reason === "refusal") {
       setAiState("error", "A IA não quis responder a este pedido. Tente reformular.");
@@ -661,7 +706,7 @@ async function improveWithAI() {
     if (err instanceof Anthropic.APIUserAbortError) setAiState("done", "Interrompido.");
     else setAiState("error", errorMessage(Anthropic, err));
   } finally {
-    currentStream = undefined;
+    stopCurrent = undefined;
   }
 }
 
@@ -719,7 +764,7 @@ $("#copyBtn").addEventListener("click", () => copy(output.value));
 $("#saveBtn").addEventListener("click", saveToHistory);
 $("#downloadBtn").addEventListener("click", download);
 $("#improveBtn").addEventListener("click", improveWithAI);
-$("#stopAiBtn").addEventListener("click", () => currentStream?.abort());
+$("#stopAiBtn").addEventListener("click", () => stopCurrent?.());
 $("#copyAiBtn").addEventListener("click", () => copy($("#aiOutput").value));
 $("#useAiBtn").addEventListener("click", () => {
   output.value = $("#aiOutput").value;
@@ -727,6 +772,15 @@ $("#useAiBtn").addEventListener("click", () => {
   toast("Versão da IA aplicada");
 });
 $("#openSettings").addEventListener("click", openSettings);
+
+if (inClaudeViewer) {
+  // No claude.ai não há chave para configurar, e downloads por link não funcionam.
+  $("#openSettings").hidden = true;
+  $("#downloadBtn").hidden = true;
+  samplePromise.then((sample) => {
+    if (!sample) $("#improveBtn").hidden = true;
+  });
+}
 
 renderHistory();
 setMode(mode);
