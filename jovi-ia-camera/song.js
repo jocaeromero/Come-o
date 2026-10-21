@@ -121,6 +121,13 @@ fx.addMono(I.noiseSweep(ev.flip[1] - ev.flip[0], 800, 6000, { q: 1, pink: true }
 for (const a of sc.alternate) { const mb = I.musicBox(a.midi + 12); keys.addMono(mb, a.t, 0.12, a.which ? 0.3 : -0.3); fx.addMono(I.pop(1800, 90 + a.t), a.t, 0.06); }
 for (const [i, f] of ['A5', 'C6', 'E6', 'A6'].entries()) { const b = I.bell(mtof(m(f)), 1.6, 1.5, 3.5); keys.addMono(b, ev.endCard + i * 0.05, 0.08, -0.3 + i * 0.2); verb.addMono(b, ev.endCard, 0.06); }
 
+// ---------- v2 transitions: the phone spin, the aperture, the glitch, the whip ----------
+fx.addMono(I.noiseSweep(0.9, 300, 6000, { q: 1.1, pink: true }), ev.cutApp, 0.16);
+for (const tc of [ev.capture, ev.capture2]) for (let i = 0; i < 5; i++) fx.addMono(I.woodTick(1.6 + i * 0.12), tc - 0.22 + i * 0.04, 0.08, (i % 2 ? 0.3 : -0.3));
+for (let i = 0; i < 8; i++) fx.addMono(I.chipNoise(i % 2 ? 'hat' : 'snare', 40 + i), ev.reaction - 0.12 + i * 0.03, 0.12, (i % 2 ? 0.5 : -0.5));
+fx.addMono(I.noiseSweep(0.3, 5000, 400, { q: 0.8, pink: true }), ev.demo2 - 0.18, 0.25);
+fx.addMono(I.noiseSweep(1.2, 200, 5000, { q: 1, shape: (x) => x * x, pink: true }), ev.hero - 1.2, 0.18);
+
 // ---------- mix ----------
 MIX.sidechain([pad, bass, lead], kicks.filter((t) => t >= ev.capture));
 const stems = {

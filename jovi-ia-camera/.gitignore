@@ -1,2 +1,15 @@
 out/*
 !out/jovi-ia-camera.mp4
+vendor/three/*
+!vendor/three/LICENSE
+!vendor/three/build/
+vendor/three/build/*
+!vendor/three/build/three.module.js
+!vendor/three/build/three.core.js
+!vendor/three/examples/
+vendor/three/examples/*
+!vendor/three/examples/jsm/
+vendor/three/examples/jsm/*
+!vendor/three/examples/jsm/postprocessing/
+!vendor/three/examples/jsm/shaders/
+!vendor/three/examples/jsm/environments/
