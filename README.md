@@ -1,43 +1,114 @@
+<div align="center">
+
 # ✦ Prompt Maker
 
-Monte prompts bem estruturados para IAs de **texto** (Claude, ChatGPT…) e de **imagem** (Midjourney, DALL·E, Stable Diffusion, Flux…) preenchendo um formulário — e, se quiser, peça para o Claude melhorar o resultado.
+**Monte prompts profissionais para IAs de texto e de imagem em segundos — e deixe o Claude lapidar o resultado.**
 
-## Como usar
+[![Demo ao vivo](https://img.shields.io/badge/demo-ao%20vivo-0f766e?style=for-the-badge&logo=githubpages&logoColor=white)](https://jocaeromero.github.io/prompt-maker/)
+[![Deploy](https://img.shields.io/github/actions/workflow/status/jocaeromero/prompt-maker/pages.yml?style=for-the-badge&label=deploy)](https://github.com/jocaeromero/prompt-maker/actions/workflows/pages.yml)
+[![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-6d28d9?style=for-the-badge)](LICENSE)
 
-É um site estático: não precisa instalar nada nem rodar build.
+![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white)
+![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat-square&logo=css3&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript_(ES_Modules)-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![Claude API](https://img.shields.io/badge/Claude_API-191919?style=flat-square&logo=anthropic&logoColor=white)
+![Zero dependências](https://img.shields.io/badge/build-zero%20depend%C3%AAncias-2dd4bf?style=flat-square)
+
+<br>
+
+<img src="docs/screenshot-text.png" alt="Prompt Maker — aba Texto no tema claro" width="900">
+
+</div>
+
+---
+
+## 💡 O problema
+
+Prompt bom tem estrutura: papel, tarefa, contexto, público, formato, restrições e exemplos. Escrever isso do zero toda vez é lento, e cada ferramenta de imagem espera uma sintaxe diferente (`--ar` no Midjourney, `Negative prompt:` no Stable Diffusion…).
+
+O **Prompt Maker** transforma um formulário simples em um prompt pronto para colar, no formato certo para cada IA — e, com um clique, manda o rascunho para o **Claude** reescrever em streaming.
+
+## ✨ Funcionalidades
+
+| | |
+|---|---|
+| 💬 **Assistente** | Descreva o que você quer em uma frase. A IA faz de 2 a 4 perguntas sobre o que falta, você responde o que souber e ela escreve o prompt. Depois é só pedir ajustes (“deixe mais curto”, “tom mais divertido”). |
+| 📝 **Prompts de texto** | Papel, tarefa, contexto, público, formato, tom, tamanho, idioma, restrições e exemplos. Saída em **Markdown**, **tags XML** (recomendado para o Claude) ou texto simples, em português ou inglês. |
+| 🎨 **Prompts de imagem** | Assunto, ação, cenário, estilo, luz, câmera, clima, paleta e prompt negativo. Formata automaticamente para **Midjourney**, **DALL·E / GPT Image** e **Stable Diffusion / Flux**, traduzindo as opções para o inglês. |
+| ✨ **Melhorar com IA** | Envia o rascunho para a API do Claude e mostra a versão melhorada **em tempo real (streaming)**, com botão para parar. |
+| ▶ **Testar prompt** | Roda o prompt de texto no Claude e mostra a resposta ali mesmo, para ajustar antes de usar. |
+| ✍️ **Suas edições ficam** | Editou o prompt à mão? O formulário para de sobrescrever até você pedir para voltar a usá-lo. |
+| 🌐 **Idiomas misturados** | Avisa quando os campos estão em um idioma e o prompt vai sair em outro, com botão para **traduzir os campos com IA**. |
+| ⚡ **Modelos prontos e seus** | Post para redes sociais, e-mail, revisão de código, foto de produto, retrato cinematográfico… e **seus próprios modelos**, salvos com um nome. |
+| ⭐ **Histórico e exportação** | Copiar, salvar no histórico (até 50 itens) e baixar `.txt`. Formulário e histórico persistem no navegador. |
+| 🌗 **Tema claro/escuro e mobile** | Segue o tema do sistema e funciona bem em telas pequenas. |
+
+<div align="center">
+<img src="docs/screenshot-image-dark.png" alt="Aba Imagem no tema escuro, gerando um prompt para Midjourney" width="640">
+&nbsp;
+<img src="docs/screenshot-mobile.png" alt="Versão mobile" width="200">
+</div>
+
+## 🛠️ Decisões técnicas
+
+- **Zero build, zero dependências.** HTML, CSS e JavaScript puros com ES Modules. Abre em qualquer hospedagem estática.
+- **SDK carregado sob demanda.** O SDK da Anthropic só é importado (via CDN, com versão fixa) quando o usuário clica em *Melhorar com IA*, então a carga inicial continua leve.
+- **Streaming com cancelamento.** A resposta do Claude aparece token a token, e o botão *Parar* interrompe a requisição.
+- **Acessibilidade.** Labels ligados a cada campo, `role="tablist"`/`aria-selected` nas abas, `aria-live` nas notificações e foco visível.
+- **Tema por design tokens.** Cores em variáveis CSS, redefinidas para o modo escuro com `prefers-color-scheme`.
+- **Privacidade.** A chave de API fica só no `localStorage` de quem usa e vai direto para a API da Anthropic, sem servidor intermediário.
+- **CI/CD.** Cada push na `master` publica o site no GitHub Pages via GitHub Actions.
+
+## 🚀 Rodando localmente
 
 ```bash
+git clone https://github.com/jocaeromero/prompt-maker.git
+cd prompt-maker
 python3 -m http.server 8000
 # abra http://localhost:8000
 ```
 
-(Abrir o `index.html` direto com duplo clique não funciona, porque o navegador bloqueia módulos JS em `file://`.)
+> Abrir o `index.html` com duplo clique não funciona, porque o navegador bloqueia módulos JS em `file://`.
 
-Para publicar, envie a pasta para o **Netlify**, **GitHub Pages** ou **Vercel** — não precisa de nenhuma configuração.
+Para usar os recursos de IA (assistente, testar, melhorar e traduzir), clique em **⚙️ IA** e cole sua chave de API da Anthropic ([console.anthropic.com](https://console.anthropic.com/settings/keys)). Na versão publicada no claude.ai, a IA usa a própria conta do Claude de quem abre a página, sem chave.
 
-## Recursos
+> 🔒 Use uma chave só sua e evite computadores compartilhados. Para liberar o recurso a outras pessoas usando a sua chave, o caminho certo é mover a chamada para um backend (por exemplo, uma função serverless).
 
-- **💬 Assistente** — descreva o que você quer em uma frase. A IA faz de 2 a 4 perguntas sobre o que falta, você responde o que souber e ela escreve o prompt. Depois dá para pedir ajustes ("deixe mais curto", "tom mais divertido"). Também tem **Gerar direto**, sem perguntas.
-- **📝 Texto** — formulário com papel da IA, tarefa, contexto, público, formato, tom, tamanho, idioma, restrições, exemplos e instruções extras. Monta o prompt em Markdown, tags XML ou texto simples, em português ou inglês.
-- **🎨 Imagem** — assunto, ação, cenário, estilo, iluminação, câmera, clima, paleta, detalhes, prompt negativo e proporção, no formato de cada ferramenta (`--ar`/`--no` no Midjourney, `Negative prompt:` no Stable Diffusion/Flux, frase natural no DALL·E).
-- **▶ Testar prompt** — roda o prompt de texto no Claude e mostra a resposta, para você ajustar antes de usar.
-- **✨ Melhorar com IA** — reescreve o prompt deixando a tarefa, o contexto e o formato mais claros.
-- **Suas edições ficam.** Se você editar o prompt à mão, o formulário para de sobrescrevê-lo até você clicar em "Voltar a usar o formulário".
-- **Idiomas misturados** — se você escrever em português e pedir o prompt em inglês (ou o contrário, na aba Imagem), aparece um aviso com o botão **Traduzir campos com IA**.
-- **Modelos** — modelos prontos e **seus próprios modelos**: salve o formulário com um nome e use de novo depois.
-- **Copiar, salvar no histórico e baixar .txt.** Histórico, modelos e formulários ficam salvos no navegador.
+## 📁 Estrutura
 
-### IA
+```
+.
+├── index.html          # estrutura da página e formulários
+├── styles.css          # visual, design tokens e modo escuro
+├── app.js              # opções, modelos, montagem dos prompts e integração com o Claude
+├── docs/               # screenshots do README
+└── .github/workflows/  # deploy automático no GitHub Pages
+```
 
-- **No link do claude.ai**, a IA usa a sua própria conta do Claude, sem chave de API. No primeiro uso a página pede permissão.
-- **Rodando o site por conta própria** (localhost, Netlify…), clique em **⚙️ IA** e cole uma chave de API da Anthropic ([console.anthropic.com](https://console.anthropic.com/settings/keys)). O modelo usado é o `claude-opus-5-5`.
+## 🗺️ Próximos passos
 
-> 🔒 A chave fica salva só no `localStorage` do seu navegador e vai direto para a API da Anthropic. Como fica acessível no navegador, use uma chave só sua e não use esse recurso em computadores compartilhados. Para abrir o app para outras pessoas usando a sua chave, o certo é colocar a chamada à API num backend (por exemplo, uma Netlify Function).
+- [ ] Backend serverless para usar o *Melhorar com IA* sem chave própria
+- [ ] Compartilhar prompt por link
+- [ ] Mais modelos prontos e ferramentas de imagem
+- [ ] Testes automatizados da montagem dos prompts
 
-## Arquivos
+---
 
-| Arquivo | O que tem |
-|---|---|
-| `index.html` | Estrutura da página |
-| `styles.css` | Visual (com modo escuro automático) |
-| `app.js` | Opções, modelos prontos, montagem dos prompts e integração com o Claude |
+<details>
+<summary>🇺🇸 <b>English summary</b></summary>
+
+<br>
+
+**Prompt Maker** is a zero-dependency web app that turns a simple form into well-structured prompts for text AIs (Claude, ChatGPT…) and image AIs (Midjourney, DALL·E, Stable Diffusion, Flux). It formats output for each tool's syntax, ships ready-made templates, keeps a local history, and can send the draft to the **Claude API** to rewrite it with **real-time streaming**.
+
+Built with vanilla HTML, CSS and JavaScript (ES Modules), light/dark themes, accessible markup, and continuous deployment to GitHub Pages.
+
+**[▶ Live demo](https://jocaeromero.github.io/prompt-maker/)**
+
+</details>
+
+<div align="center">
+
+Feito por [@jocaeromero](https://github.com/jocaeromero) · Licença [MIT](LICENSE)
+
+</div>
