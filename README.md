@@ -17,11 +17,20 @@ Para publicar, envie a pasta para o **Netlify**, **GitHub Pages** ou **Vercel** 
 
 ## Recursos
 
-- **Aba Texto** — papel da IA, tarefa, contexto, público, formato, tom, tamanho, idioma, restrições, exemplos e instruções extras (pensar passo a passo, fazer perguntas, citar fontes, dar 3 variações). Monta o prompt em Markdown, tags XML ou texto simples, em português ou inglês.
-- **Aba Imagem** — assunto, ação, cenário, estilo, iluminação, câmera, clima, paleta, detalhes, prompt negativo e proporção. Formata de acordo com a ferramenta (`--ar`/`--no` no Midjourney, `Negative prompt:` no Stable Diffusion/Flux, frase natural no DALL·E). As opções das listas saem traduzidas para o inglês.
-- **Modelos prontos** para começar rápido (post para redes sociais, e-mail, revisão de código, foto de produto, retrato cinematográfico…).
-- **Copiar, salvar no histórico e baixar .txt.** O histórico e o formulário ficam salvos no navegador.
-- **✨ Melhorar com IA** — envia o rascunho para o Claude (`claude-opus-5-5`) e mostra a versão melhorada em tempo real. Para usar, clique em **⚙️ IA** e cole sua chave de API da Anthropic ([console.anthropic.com](https://console.anthropic.com/settings/keys)).
+- **💬 Assistente** — descreva o que você quer em uma frase. A IA faz de 2 a 4 perguntas sobre o que falta, você responde o que souber e ela escreve o prompt. Depois dá para pedir ajustes ("deixe mais curto", "tom mais divertido"). Também tem **Gerar direto**, sem perguntas.
+- **📝 Texto** — formulário com papel da IA, tarefa, contexto, público, formato, tom, tamanho, idioma, restrições, exemplos e instruções extras. Monta o prompt em Markdown, tags XML ou texto simples, em português ou inglês.
+- **🎨 Imagem** — assunto, ação, cenário, estilo, iluminação, câmera, clima, paleta, detalhes, prompt negativo e proporção, no formato de cada ferramenta (`--ar`/`--no` no Midjourney, `Negative prompt:` no Stable Diffusion/Flux, frase natural no DALL·E).
+- **▶ Testar prompt** — roda o prompt de texto no Claude e mostra a resposta, para você ajustar antes de usar.
+- **✨ Melhorar com IA** — reescreve o prompt deixando a tarefa, o contexto e o formato mais claros.
+- **Suas edições ficam.** Se você editar o prompt à mão, o formulário para de sobrescrevê-lo até você clicar em "Voltar a usar o formulário".
+- **Idiomas misturados** — se você escrever em português e pedir o prompt em inglês (ou o contrário, na aba Imagem), aparece um aviso com o botão **Traduzir campos com IA**.
+- **Modelos** — modelos prontos e **seus próprios modelos**: salve o formulário com um nome e use de novo depois.
+- **Copiar, salvar no histórico e baixar .txt.** Histórico, modelos e formulários ficam salvos no navegador.
+
+### IA
+
+- **No link do claude.ai**, a IA usa a sua própria conta do Claude, sem chave de API. No primeiro uso a página pede permissão.
+- **Rodando o site por conta própria** (localhost, Netlify…), clique em **⚙️ IA** e cole uma chave de API da Anthropic ([console.anthropic.com](https://console.anthropic.com/settings/keys)). O modelo usado é o `claude-opus-5-5`.
 
 > 🔒 A chave fica salva só no `localStorage` do seu navegador e vai direto para a API da Anthropic. Como fica acessível no navegador, use uma chave só sua e não use esse recurso em computadores compartilhados. Para abrir o app para outras pessoas usando a sua chave, o certo é colocar a chamada à API num backend (por exemplo, uma Netlify Function).
 

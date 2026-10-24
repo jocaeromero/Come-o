@@ -15,7 +15,8 @@
       <h1>Prompt Maker</h1>
     </div>
     <nav class="tabs" role="tablist">
-      <button class="tab active" role="tab" aria-selected="true" data-mode="text">📝 Texto</button>
+      <button class="tab active" role="tab" aria-selected="true" data-mode="assistant">💬 Assistente</button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="text">📝 Texto</button>
       <button class="tab" role="tab" aria-selected="false" data-mode="image">🎨 Imagem</button>
     </nav>
     <button class="icon-btn" id="openSettings" title="Configurar IA">⚙️ <span>IA</span></button>
@@ -24,9 +25,50 @@
   <main class="layout">
     <!-- ===== Formulário ===== -->
     <section class="panel form-panel">
-      <div class="presets">
+      <!-- Assistente: descreve, responde perguntas, recebe o prompt -->
+      <div id="assistantPanel" class="assistant" hidden>
+        <div class="field">
+          <span class="label">Que tipo de prompt?</span>
+          <div class="segmented" role="radiogroup" aria-label="Tipo de prompt">
+            <label><input type="radio" name="a-kind" id="a-kind-text" value="text" checked> Texto (ChatGPT, Claude…)</label>
+            <label><input type="radio" name="a-kind" id="a-kind-image" value="image"> Imagem (Midjourney, DALL·E…)</label>
+          </div>
+        </div>
+        <div class="field">
+          <label for="a-idea">Descreva o que você quer, do seu jeito</label>
+          <textarea id="a-idea" rows="4" placeholder="Ex.: quero um post para o Instagram anunciando que minha confeitaria agora faz entregas no bairro"></textarea>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="a-start">Fazer perguntas</button>
+          <button type="button" class="btn" id="a-skip">Gerar direto</button>
+          <button type="button" class="btn ghost" id="a-stop" hidden>Parar</button>
+          <button type="button" class="btn ghost" id="a-reset" hidden>Recomeçar</button>
+        </div>
+        <p class="status" id="a-status" role="status"></p>
+
+        <div id="a-questions" class="questions" hidden>
+          <p class="hint">Responda o que souber. O que ficar em branco a IA decide ou deixa como [marcador].</p>
+          <div id="a-questionList"></div>
+          <button type="button" class="btn primary" id="a-build">Gerar prompt</button>
+        </div>
+
+        <div id="a-refine" class="refine" hidden>
+          <label for="a-change">Quer ajustar algo no prompt?</label>
+          <textarea id="a-change" rows="2" placeholder="Ex.: deixe mais curto e com tom mais divertido"></textarea>
+          <button type="button" class="btn" id="a-refineBtn">Ajustar prompt</button>
+        </div>
+      </div>
+
+      <div class="presets" id="presetsBox">
         <label for="presetSelect">Começar de um modelo</label>
-        <select id="presetSelect"></select>
+        <div class="row">
+          <select id="presetSelect"></select>
+          <button type="button" class="btn ghost" id="deleteTemplate" hidden>Excluir modelo</button>
+        </div>
+        <div class="row">
+          <input id="templateName" placeholder="Nome para salvar o formulário como modelo" aria-label="Nome do novo modelo">
+          <button type="button" class="btn" id="saveTemplate">Salvar modelo</button>
+        </div>
       </div>
 
       <!-- Texto -->
@@ -185,7 +227,12 @@
         <p class="hint">💡 Modelos de imagem entendem melhor inglês. As opções das listas são traduzidas automaticamente; o que você digitar fica como está — o “Melhorar com IA” traduz tudo.</p>
       </form>
 
-      <div class="form-actions">
+      <div class="notice" id="langNotice" hidden>
+        <span id="langNoticeText"></span>
+        <button type="button" class="btn ai" id="translateBtn">Traduzir campos com IA</button>
+      </div>
+
+      <div class="form-actions" id="formActions">
         <button type="button" class="btn ghost" id="clearForm">Limpar campos</button>
       </div>
     </section>
@@ -196,17 +243,22 @@
         <h2>Seu prompt</h2>
         <span class="counter" id="counter">0 caracteres</span>
       </div>
+      <div class="notice" id="detachedNotice" hidden>
+        <span>Você editou o prompt, então o formulário não vai mais sobrescrevê-lo.</span>
+        <button type="button" class="btn ghost" id="reattachBtn">Voltar a usar o formulário</button>
+      </div>
       <textarea id="output" class="output" rows="16" spellcheck="false" placeholder="Preencha o formulário e o prompt aparece aqui."></textarea>
       <div class="actions">
         <button class="btn primary" id="copyBtn">📋 Copiar</button>
         <button class="btn" id="saveBtn">⭐ Salvar</button>
         <button class="btn" id="downloadBtn">⬇️ .txt</button>
         <button class="btn ai" id="improveBtn">✨ Melhorar com IA</button>
+        <button class="btn ai" id="testBtn">▶ Testar prompt</button>
       </div>
 
       <div class="ai-box" id="aiBox" hidden>
         <div class="output-head">
-          <h3>Versão da IA</h3>
+          <h3 id="aiTitle">Versão da IA</h3>
           <span class="status" id="aiStatus"></span>
         </div>
         <textarea id="aiOutput" class="output" rows="12" spellcheck="false" readonly></textarea>

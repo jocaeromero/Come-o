@@ -305,15 +305,14 @@ function buildImagePrompt(d) {
   const subject = d.subject.trim();
   if (!subject && !style && !d.setting) return "";
 
-  let lead = subject;
-  if (style && subject) lead = lang === "en" ? `${style} of ${subject}` : `${style} de ${subject}`;
-  else if (style) lead = style;
-
+  // Assunto primeiro e estilo como item da lista: não precisa de "of"/"de"
+  // ligando os dois, então campos em idiomas diferentes não viram frase quebrada.
   const palette = d.palette ? (lang === "en" ? `${d.palette} color palette` : `paleta de cores: ${d.palette}`) : "";
   const pieces = [
-    lead,
+    subject,
     d.action,
     d.setting,
+    style,
     optText("i-light", d.lighting, lang),
     optText("i-camera", d.camera, lang),
     palette,
@@ -384,12 +383,50 @@ const store = {
   },
 };
 
-// ---------- Interface ----------
+// ---------- Estado da interface ----------
 
 const $ = (sel) => document.querySelector(sel);
 const forms = { text: $("#textForm"), image: $("#imageForm") };
 const output = $("#output");
-let mode = store.get("pm.mode", "text") === "image" ? "image" : "text";
+const MODES = ["assistant", "text", "image"];
+let mode = MODES.includes(store.get("pm.mode", "assistant")) ? store.get("pm.mode", "assistant") : "assistant";
+
+// O que está no quadro "Seu prompt" de cada aba. "detached" = a pessoa editou
+// à mão (ou carregou do histórico / da IA) e o formulário não sobrescreve mais.
+const outState = {
+  assistant: { text: "", detached: true },
+  text: { text: "", detached: false },
+  image: { text: "", detached: false },
+};
+Object.assign(outState, store.get("pm.out", {}));
+for (const m of MODES) if (!outState[m] || typeof outState[m].text !== "string") outState[m] = { text: "", detached: m === "assistant" };
+
+const isFormMode = () => mode === "text" || mode === "image";
+
+function saveOutState() {
+  store.set("pm.out", outState);
+}
+
+function setOutput(text, opts = {}) {
+  output.value = text;
+  outState[mode].text = text;
+  if (opts.detached !== undefined) outState[mode].detached = opts.detached;
+  updateCounter();
+  updateDetachedNotice();
+  saveOutState();
+}
+
+function updateDetachedNotice() {
+  $("#detachedNotice").hidden = !(isFormMode() && outState[mode].detached);
+}
+
+function updateCounter() {
+  const text = output.value;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  $("#counter").textContent = `${text.length} caracteres · ${words} palavras`;
+}
+
+// ---------- Formulários ----------
 
 function fillSelects() {
   for (const [id, opts] of Object.entries(OPTIONS)) {
@@ -397,12 +434,6 @@ function fillSelects() {
     select.replaceChildren(new Option(id === "t-lang" ? "— mesmo do prompt —" : "— livre —", ""));
     for (const [key, pt] of opts) select.add(new Option(pt, key));
   }
-}
-
-function fillPresets() {
-  const select = $("#presetSelect");
-  select.replaceChildren(new Option("— escolha um modelo —", ""));
-  PRESETS[mode].forEach((p, i) => select.add(new Option(p.name, String(i))));
 }
 
 function readForm(form) {
@@ -433,16 +464,135 @@ function resetForm(form) {
 }
 
 function render() {
+  if (!isFormMode()) return;
   const data = readForm(forms[mode]);
-  output.value = mode === "text" ? buildTextPrompt(data) : buildImagePrompt(data);
-  updateCounter();
   store.set(`pm.form.${mode}`, data);
+  updateLangNotice(data);
+  if (outState[mode].detached) return;
+  setOutput(mode === "text" ? buildTextPrompt(data) : buildImagePrompt(data));
 }
 
-function updateCounter() {
-  const text = output.value;
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  $("#counter").textContent = `${text.length} caracteres · ${words} palavras`;
+// ---------- Aviso de idiomas misturados ----------
+
+const FREE_TEXT = {
+  text: ["role", "task", "context", "audience", "constraints", "examples"],
+  image: ["subject", "action", "setting", "palette", "details", "negative"],
+};
+const PT_HINT = /[ãõçáéíóúâêôà]|\b(de|do|da|dos|das|um|uma|para|com|não|que|sobre|seu|sua|em|na|os|ou)\b/i;
+const EN_HINT = /\b(the|of|with|and|for|is|are|your|this|that|wearing|in|at|an)\b/i;
+
+// Campos digitados em outro idioma que não o do prompt final.
+function mismatchedFields(data) {
+  const target = data.promptLang === "en" ? "en" : "pt";
+  // No modo texto só avisamos PT→EN: contexto em inglês (código, por exemplo) é comum e intencional.
+  if (mode === "text" && target === "pt") return [];
+  const looksWrong = target === "en" ? PT_HINT : EN_HINT;
+  return FREE_TEXT[mode].filter((name) => data[name] && looksWrong.test(data[name]));
+}
+
+function updateLangNotice(data) {
+  const fields = isFormMode() ? mismatchedFields(data) : [];
+  $("#langNotice").hidden = fields.length === 0;
+  if (fields.length) {
+    const target = data.promptLang === "en" ? "inglês" : "português";
+    const source = data.promptLang === "en" ? "português" : "inglês";
+    $("#langNoticeText").textContent = `Alguns campos estão em ${source}, mas o prompt vai sair em ${target}.`;
+  }
+}
+
+// ---------- Modelos (prontos e salvos por você) ----------
+
+function getTemplates(m) {
+  const t = store.get(`pm.templates.${m}`, []);
+  return Array.isArray(t) ? t : [];
+}
+
+function fillPresets() {
+  const select = $("#presetSelect");
+  select.replaceChildren(new Option("— escolha um modelo —", ""));
+  if (!isFormMode()) return;
+  const builtIn = document.createElement("optgroup");
+  builtIn.label = "Prontos";
+  PRESETS[mode].forEach((p, i) => builtIn.append(new Option(p.name, `p:${i}`)));
+  select.append(builtIn);
+  const mine = getTemplates(mode);
+  if (mine.length) {
+    const group = document.createElement("optgroup");
+    group.label = "Meus modelos";
+    for (const t of mine) group.append(new Option(t.name, `u:${t.id}`));
+    select.append(group);
+  }
+  resetDeleteButton();
+}
+
+function selectedTemplate() {
+  const v = $("#presetSelect").value;
+  if (!v.startsWith("u:")) return null;
+  return getTemplates(mode).find((t) => String(t.id) === v.slice(2)) || null;
+}
+
+function applyPreset(values, name) {
+  resetForm(forms[mode]);
+  writeForm(forms[mode], values);
+  outState[mode].detached = false;
+  render();
+  toast(`Modelo “${name}” aplicado`);
+}
+
+function saveTemplate() {
+  const name = $("#templateName").value.trim();
+  if (!name) return toast("Dê um nome ao modelo antes de salvar");
+  const templates = getTemplates(mode).filter((t) => t.name !== name);
+  templates.push({ id: Date.now(), name, values: readForm(forms[mode]) });
+  store.set(`pm.templates.${mode}`, templates);
+  $("#templateName").value = "";
+  fillPresets();
+  toast(`Modelo “${name}” salvo`);
+}
+
+let deleteArmed = false;
+function resetDeleteButton() {
+  deleteArmed = false;
+  const btn = $("#deleteTemplate");
+  btn.textContent = "Excluir modelo";
+  btn.hidden = !selectedTemplate();
+}
+
+function deleteTemplate() {
+  const t = selectedTemplate();
+  if (!t) return;
+  // Sem confirm() (bloqueado em alguns visualizadores): o primeiro clique só pede confirmação.
+  if (!deleteArmed) {
+    deleteArmed = true;
+    $("#deleteTemplate").textContent = "Clique de novo para excluir";
+    setTimeout(resetDeleteButton, 4000);
+    return;
+  }
+  store.set(`pm.templates.${mode}`, getTemplates(mode).filter((x) => x.id !== t.id));
+  fillPresets();
+  toast(`Modelo “${t.name}” excluído`);
+}
+
+// ---------- Abas ----------
+
+function assistantKind() {
+  return $("#a-kind-image").checked ? "image" : "text";
+}
+
+// Qual tipo de prompt está no quadro: texto ou imagem.
+function currentKind() {
+  return mode === "assistant" ? assistantKind() : mode;
+}
+
+const PLACEHOLDERS = {
+  assistant: "Descreva o que você quer ao lado e o prompt aparece aqui.",
+  text: "Preencha o formulário e o prompt aparece aqui.",
+  image: "Preencha o formulário e o prompt aparece aqui.",
+};
+
+function updateTestButton() {
+  // Não dá para "testar" um prompt de imagem aqui: o Claude não gera imagens.
+  $("#testBtn").hidden = aiUnavailable || currentKind() === "image";
 }
 
 function setMode(next) {
@@ -454,6 +604,15 @@ function setMode(next) {
     t.setAttribute("aria-selected", String(active));
   });
   for (const [m, f] of Object.entries(forms)) f.hidden = m !== mode;
+  $("#assistantPanel").hidden = mode !== "assistant";
+  $("#presetsBox").hidden = !isFormMode();
+  $("#formActions").hidden = !isFormMode();
+  if (!isFormMode()) $("#langNotice").hidden = true;
+  output.placeholder = PLACEHOLDERS[mode];
+  output.value = outState[mode].text;
+  updateCounter();
+  updateDetachedNotice();
+  updateTestButton();
   fillPresets();
   $("#aiBox").hidden = true;
   render();
@@ -465,7 +624,7 @@ function toast(msg) {
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
 async function copy(text) {
@@ -485,6 +644,8 @@ function getHistory() {
   return Array.isArray(h) ? h : [];
 }
 
+const MODE_ICONS = { assistant: "💬", text: "📝", image: "🎨" };
+
 function renderHistory() {
   const list = $("#historyList");
   const items = getHistory();
@@ -501,14 +662,14 @@ function renderHistory() {
     const li = document.createElement("li");
     const tag = document.createElement("span");
     tag.className = "tag";
-    tag.textContent = item.mode === "image" ? "🎨" : "📝";
+    tag.textContent = MODE_ICONS[item.mode] || "📝";
     const text = document.createElement("span");
     text.className = "item-text";
     text.textContent = item.text;
     text.title = "Carregar este prompt";
     text.addEventListener("click", () => {
-      output.value = item.text;
-      updateCounter();
+      if (MODES.includes(item.mode) && item.mode !== mode) setMode(item.mode);
+      setOutput(item.text, { detached: true });
       toast("Prompt carregado");
     });
     const del = document.createElement("button");
@@ -541,22 +702,153 @@ function download() {
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `prompt-${mode === "image" ? "imagem" : "texto"}.txt`;
+  a.download = `prompt-${currentKind() === "image" ? "imagem" : "texto"}.txt`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-// ---------- Melhorar com IA (Claude) ----------
+// ---------- Chamadas ao Claude ----------
 
 const MODEL = "claude-opus-5-5";
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
 let sdkPromise;
-let stopCurrent;
 
 // Dentro do claude.ai a página usa a conta do próprio visitante (capacidade
 // "sample"), sem chave de API. Fora dele, usa a chave salva em ⚙️ IA.
 const inClaudeViewer = typeof window.claude?.use === "function";
 const samplePromise = inClaudeViewer ? window.claude.use("sample") : null;
+let aiUnavailable = false;
+
+/**
+ * Manda um pedido ao Claude e devolve {text, truncated}. Chama onText(textoCompleto)
+ * enquanto a resposta chega. Em caso de erro rejeita com {code, message, text?}.
+ */
+async function askClaude({ input, onText, signal, effort = "medium", quick = false }) {
+  if (inClaudeViewer) {
+    const sample = await samplePromise;
+    if (!sample) throw { code: "unavailable" };
+    const opts = { signal, cache: false, onText: ({ text }) => onText?.(text) };
+    if (quick) opts.modelTier = "quick";
+    const { text, truncated } = await sample(input, opts);
+    return { text, truncated };
+  }
+
+  const apiKey = store.get("pm.apiKey", "");
+  if (!apiKey) throw { code: "no_key" };
+  let Anthropic;
+  try {
+    sdkPromise ??= import(SDK_URL);
+    ({ default: Anthropic } = await sdkPromise);
+  } catch {
+    sdkPromise = undefined;
+    throw { code: "sdk" };
+  }
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  let full = "";
+  try {
+    const stream = client.beta.messages.stream(
+      {
+        model: MODEL,
+        max_tokens: 16000,
+        output_config: { effort },
+        // Se o modelo recusar, a API tenta automaticamente outro modelo adequado.
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        messages: [{ role: "user", content: input }],
+      },
+      { signal },
+    );
+    stream.on("text", (delta) => {
+      full += delta;
+      onText?.(full);
+    });
+    const message = await stream.finalMessage();
+    if (message.stop_reason === "refusal") throw { code: "refused" };
+    return { text: full, truncated: message.stop_reason === "max_tokens" };
+  } catch (err) {
+    if (err?.code && !(err instanceof Error)) throw err;
+    if (err instanceof Anthropic.APIUserAbortError || signal?.aborted) throw { code: "cancelled", text: full };
+    if (err instanceof Anthropic.AuthenticationError) throw { code: "bad_key" };
+    if (err instanceof Anthropic.PermissionDeniedError) throw { code: "forbidden" };
+    if (err instanceof Anthropic.RateLimitError) throw { code: "rate_limited", text: full };
+    if (err instanceof Anthropic.APIConnectionError) throw { code: "offline", text: full };
+    throw { code: "api_error", message: err?.message || String(err), text: full };
+  }
+}
+
+const AI_ERRORS = {
+  unavailable: "A IA não está disponível nesta visualização.",
+  no_key: "Cole sua chave de API em ⚙️ IA para usar a IA.",
+  bad_key: "Chave de API inválida. Confira em ⚙️ IA.",
+  forbidden: "Sua chave não tem permissão para este modelo.",
+  sdk: "Não consegui carregar o SDK da Anthropic (sem internet?).",
+  offline: "Sem conexão com a IA. Verifique sua internet.",
+  not_granted: "Você não autorizou esta página a usar o Claude.",
+  sampling_disabled: "O Claude não está disponível nesta conta.",
+  rate_limited: "Limite de uso atingido. Espere um pouco e tente de novo.",
+  session_expired: "Sua sessão expirou. Entre de novo no claude.ai.",
+  refused: "A IA não quis responder a este pedido. Tente reformular.",
+  empty_completion: "A IA não devolveu nada. Tente de novo.",
+  bad_json: "Não entendi a resposta da IA. Tente de novo ou use “Gerar direto”.",
+};
+
+function aiErrorText(e) {
+  if (e?.code === "no_key") openSettings();
+  if (e?.code === "api_error") return `Erro da API: ${e.message}`;
+  return AI_ERRORS[e?.code] || "Falha de conexão com a IA. Tente de novo.";
+}
+
+// Lê JSON de uma resposta que pode ter texto ou ``` em volta.
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* tenta os formatos abaixo */
+  }
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) {
+    try {
+      return JSON.parse(fence[1]);
+    } catch {
+      /* idem */
+    }
+  }
+  const start = text.search(/[[{]/);
+  const end = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      /* desiste */
+    }
+  }
+  return null;
+}
+
+// Um pedido por vez: enquanto a IA trabalha, os outros botões de IA ficam travados.
+const AI_BUTTONS = ["#improveBtn", "#testBtn", "#translateBtn", "#a-start", "#a-skip", "#a-build", "#a-refineBtn"];
+let stopCurrent;
+
+function setBusy(on) {
+  for (const sel of AI_BUTTONS) $(sel).disabled = on;
+}
+
+async function withAi(stopButton, call) {
+  const ctl = new AbortController();
+  stopCurrent = () => ctl.abort();
+  setBusy(true);
+  if (stopButton) $(stopButton).hidden = false;
+  try {
+    return await call(ctl.signal);
+  } finally {
+    stopCurrent = undefined;
+    setBusy(false);
+    if (stopButton) $(stopButton).hidden = true;
+  }
+}
+
+// ---------- Instruções para a IA ----------
 
 const TOOL_NAMES = {
   generic: "um gerador de imagens genérico",
@@ -565,21 +857,21 @@ const TOOL_NAMES = {
   sd: "Stable Diffusion / Flux",
 };
 
-function systemPrompt() {
-  if (mode === "text") {
+function improveInstructions() {
+  if (currentKind() === "text") {
     return [
-      "Você é um engenheiro de prompts especialista. Você recebe um rascunho de prompt, montado a partir de um formulário, e devolve uma versão melhor, pronta para colar em um assistente de IA como Claude ou ChatGPT.",
+      "Você é um engenheiro de prompts especialista. Você recebe um rascunho de prompt e devolve uma versão melhor, pronta para colar em um assistente de IA como Claude ou ChatGPT.",
       "",
       "Como melhorar:",
       "- Preserve a intenção, os fatos e todas as restrições do rascunho. Não invente dados específicos (nomes, números, preços); quando faltar algo essencial, use um marcador entre colchetes, como [nome do produto].",
       "- Deixe a tarefa explícita e acrescente o que costuma faltar: o propósito da tarefa, critérios do que é uma boa resposta e o formato de saída esperado.",
-      "- Mantenha o idioma e o estilo de estrutura do rascunho (títulos Markdown, tags XML ou texto simples).",
+      "- Mantenha o idioma e o estilo de estrutura do rascunho (títulos Markdown, tags XML ou texto simples). Se houver trechos em outro idioma, traduza-os para o idioma principal.",
       "- Seja claro e direto; não encha o prompt de instruções genéricas.",
       "",
       "Responda apenas com o prompt final, sem comentários antes ou depois e sem bloco de código.",
     ].join("\n");
   }
-  const d = readForm(forms.image);
+  const d = mode === "image" ? readForm(forms.image) : { tool: "generic", promptLang: "en" };
   const lang = d.promptLang === "pt" ? "português" : "inglês";
   return [
     `Você é especialista em escrever prompts para modelos de geração de imagem. A ferramenta de destino é ${TOOL_NAMES[d.tool] || TOOL_NAMES.generic}.`,
@@ -595,119 +887,266 @@ function systemPrompt() {
   ].join("\n");
 }
 
-function setAiState(state, msg) {
-  const generating = state === "generating";
-  $("#improveBtn").disabled = generating;
-  $("#stopAiBtn").hidden = !generating;
-  $("#useAiBtn").disabled = generating || !$("#aiOutput").value;
-  $("#copyAiBtn").disabled = generating || !$("#aiOutput").value;
-  $("#aiStatus").textContent = msg || "";
+function questionsInstructions(kind, idea) {
+  const target = kind === "image"
+    ? "geradores de imagem (Midjourney, DALL·E, Stable Diffusion…)"
+    : "assistentes de IA de texto (Claude, ChatGPT…)";
+  const topics = kind === "image"
+    ? "Pense em estilo visual, cenário, composição, cores, proporção e ferramenta."
+    : "Pense em objetivo, público, contexto, formato, tom e tamanho.";
+  return [
+    `Você ajuda pessoas a escrever prompts para ${target}. A pessoa descreveu o que quer:`,
+    "",
+    `<pedido>\n${idea}\n</pedido>`,
+    "",
+    `Escolha de 2 a 4 perguntas curtas, em português do Brasil, sobre as informações que ainda faltam e que mais mudariam a qualidade do resultado. ${topics} Não pergunte o que o pedido já responde. Para cada pergunta, dê um exemplo curto de resposta que combine com o pedido.`,
+    "",
+    "Responda só com JSON, sem texto antes ou depois, neste formato:",
+    '{"questions":[{"question":"...","example":"..."}]}',
+  ].join("\n");
 }
 
-function errorMessage(Anthropic, err) {
-  if (err instanceof Anthropic.AuthenticationError) return "Chave de API inválida. Confira em ⚙️ IA.";
-  if (err instanceof Anthropic.PermissionDeniedError) return "Sua chave não tem permissão para este modelo.";
-  if (err instanceof Anthropic.RateLimitError) return "Limite de uso atingido. Espere um pouco e tente de novo.";
-  if (err instanceof Anthropic.APIConnectionError) return "Sem conexão com a API. Verifique sua internet.";
-  if (err instanceof Anthropic.APIError) return `Erro da API (${err.status ?? "?"}): ${err.message}`;
-  return `Erro: ${err.message || err}`;
+function buildInstructions(kind, idea, qa) {
+  const answers = qa.length
+    ? ["", "<respostas>", ...qa.map(({ question, answer }) => `P: ${question}\nR: ${answer || "(sem resposta — decida algo sensato ou use um [marcador])"}`), "</respostas>"]
+    : [];
+  if (kind === "image") {
+    return [
+      "Você é especialista em prompts para geradores de imagem. Escreva um prompt a partir do pedido abaixo.",
+      "",
+      `<pedido>\n${idea}\n</pedido>`,
+      ...answers,
+      "",
+      "Como escrever:",
+      "- Em inglês, como uma descrição visual concreta: assunto, ação, cenário, estilo, iluminação, enquadramento, cores e clima.",
+      "- Se a pessoa citou uma ferramenta, use a sintaxe dela (Midjourney: --ar e --no no final; Stable Diffusion/Flux: linha \"Negative prompt:\"). Sem ferramenta citada, escreva um parágrafo natural e, se fizer sentido, uma linha \"Avoid: …\".",
+      "- Respeite tudo o que a pessoa pediu e preencha o que faltar com escolhas coerentes com o pedido.",
+      "",
+      "Responda apenas com o prompt final, sem comentários antes ou depois e sem bloco de código.",
+    ].join("\n");
+  }
+  return [
+    "Você é um engenheiro de prompts especialista. Escreva um prompt pronto para colar em um assistente de IA (Claude, ChatGPT) a partir do pedido abaixo.",
+    "",
+    `<pedido>\n${idea}\n</pedido>`,
+    ...answers,
+    "",
+    "Como escrever:",
+    "- Diga quem a IA deve ser, se isso ajudar, e explique a tarefa e o propósito dela.",
+    "- Inclua o contexto e os detalhes que a pessoa deu; explique o motivo das restrições quando ele for claro.",
+    "- Diga o formato, o tom e o tamanho esperados para a resposta.",
+    "- Não invente dados específicos (nomes, preços, datas). Onde faltar algo essencial, use um marcador entre colchetes, como [nome da loja].",
+    "- Escreva em português do Brasil, a menos que o pedido indique outro idioma. Use títulos curtos só se deixarem o prompt mais fácil de ler.",
+    "",
+    "Responda apenas com o prompt final, sem comentários antes ou depois e sem bloco de código.",
+  ].join("\n");
 }
 
-const SAMPLE_ERRORS = {
-  not_granted: "Você não autorizou esta página a usar o Claude.",
-  sampling_disabled: "O Claude não está disponível nesta conta.",
-  rate_limited: "Limite de uso atingido. Espere um pouco e tente de novo.",
-  session_expired: "Sua sessão expirou. Entre de novo no claude.ai.",
-  refused: "A IA não quis responder a este pedido. Tente reformular.",
-  empty_completion: "A IA não devolveu nada. Tente de novo.",
-};
+function refineInstructions(prompt, change) {
+  return [
+    "Ajuste o prompt abaixo conforme o pedido de mudança. Mantenha tudo o que não foi pedido para mudar e o mesmo idioma.",
+    "",
+    `<prompt>\n${prompt}\n</prompt>`,
+    "",
+    `<mudanca>\n${change}\n</mudanca>`,
+    "",
+    "Responda apenas com o prompt ajustado, sem comentários antes ou depois e sem bloco de código.",
+  ].join("\n");
+}
 
-async function improveWithSample(draft) {
-  const sample = await samplePromise;
-  if (!sample) return toast("A IA não está disponível nesta visualização");
+// ---------- Melhorar e testar (caixa da IA) ----------
 
+function setAiBoxState(state, msg) {
+  const out = $("#aiOutput").value;
+  $("#useAiBtn").disabled = state === "generating" || !out;
+  $("#copyAiBtn").disabled = state === "generating" || !out;
+  const status = $("#aiStatus");
+  status.textContent = msg || "";
+  status.classList.toggle("error", state === "error");
+}
+
+async function runInAiBox(title, canUse, input, effort) {
   const aiOutput = $("#aiOutput");
-  const ctl = new AbortController();
-  stopCurrent = () => ctl.abort();
+  $("#aiTitle").textContent = title;
+  $("#useAiBtn").hidden = !canUse;
   $("#aiBox").hidden = false;
   aiOutput.value = "";
-  setAiState("generating", "Pensando…");
-  try {
-    const { truncated } = await sample(`${systemPrompt()}\n\nRascunho do prompt:\n\n${draft}`, {
-      signal: ctl.signal,
-      cache: false,
-      onText: ({ text }) => {
-        aiOutput.value = text;
-        aiOutput.scrollTop = aiOutput.scrollHeight;
-      },
-    });
-    setAiState("done", truncated ? "Pronto (resposta cortada por tamanho)." : "Pronto ✨");
-  } catch (e) {
-    aiOutput.value = e.text ?? "";
-    if (e.code === "cancelled") setAiState("done", "Interrompido.");
-    else setAiState("error", SAMPLE_ERRORS[e.code] || "Falha de conexão com o Claude. Tente de novo.");
-  } finally {
-    stopCurrent = undefined;
-  }
-}
-
-async function improveWithAI() {
-  const draft = output.value.trim();
-  if (!draft) return toast("Preencha o formulário primeiro");
-  if (inClaudeViewer) return improveWithSample(draft);
-  const apiKey = store.get("pm.apiKey", "");
-  if (!apiKey) {
-    openSettings();
-    return toast("Cole sua chave de API para usar a IA");
-  }
-
-  const aiOutput = $("#aiOutput");
-  $("#aiBox").hidden = false;
-  aiOutput.value = "";
-  setAiState("generating", "Gerando…");
-
-  let Anthropic;
-  try {
-    sdkPromise ??= import(SDK_URL);
-    ({ default: Anthropic } = await sdkPromise);
-  } catch {
-    sdkPromise = undefined;
-    return setAiState("error", "Não consegui carregar o SDK da Anthropic (sem internet?).");
-  }
-
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  try {
-    const stream = client.beta.messages.stream({
-      model: MODEL,
-      max_tokens: 16000,
-      output_config: { effort: "medium" },
-      // Se o modelo recusar, a API tenta automaticamente outro modelo adequado.
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: systemPrompt(),
-      messages: [{ role: "user", content: `Rascunho do prompt:\n\n${draft}` }],
-    });
-    stopCurrent = () => stream.abort();
-    stream.on("text", (delta) => {
-      aiOutput.value += delta;
-      aiOutput.scrollTop = aiOutput.scrollHeight;
-    });
-    const message = await stream.finalMessage();
-
-    if (message.stop_reason === "refusal") {
-      setAiState("error", "A IA não quis responder a este pedido. Tente reformular.");
-    } else if (message.stop_reason === "max_tokens") {
-      setAiState("done", "Pronto (resposta cortada por tamanho).");
-    } else {
-      const servedBy = message.model && message.model !== MODEL ? ` · respondido por ${message.model}` : "";
-      setAiState("done", `Pronto ✨${servedBy}`);
+  setAiBoxState("generating", "Pensando…");
+  await withAi("#stopAiBtn", async (signal) => {
+    try {
+      const { truncated } = await askClaude({
+        input,
+        signal,
+        effort,
+        onText: (text) => {
+          aiOutput.value = text;
+          aiOutput.scrollTop = aiOutput.scrollHeight;
+        },
+      });
+      setAiBoxState("done", truncated ? "Pronto (resposta cortada por tamanho)." : "Pronto ✨");
+    } catch (e) {
+      aiOutput.value = e?.text ?? "";
+      if (e?.code === "cancelled") setAiBoxState("done", "Interrompido.");
+      else setAiBoxState("error", aiErrorText(e));
     }
-  } catch (err) {
-    if (err instanceof Anthropic.APIUserAbortError) setAiState("done", "Interrompido.");
-    else setAiState("error", errorMessage(Anthropic, err));
-  } finally {
-    stopCurrent = undefined;
-  }
+  });
+}
+
+function improveWithAI() {
+  const draft = output.value.trim();
+  if (!draft) return toast("Monte um prompt primeiro");
+  runInAiBox("Versão melhorada", true, `${improveInstructions()}\n\nRascunho do prompt:\n\n${draft}`, "medium");
+}
+
+function testPrompt() {
+  const draft = output.value.trim();
+  if (!draft) return toast("Monte um prompt primeiro");
+  runInAiBox("Resposta do teste", false, draft, "medium");
+}
+
+// ---------- Traduzir campos ----------
+
+async function translateFields() {
+  const data = readForm(forms[mode]);
+  const fields = mismatchedFields(data);
+  if (!fields.length) return;
+  const values = Object.fromEntries(fields.map((f) => [f, data[f]]));
+  const target = data.promptLang === "en" ? "inglês" : "português do Brasil";
+  const input = [
+    `Traduza os valores deste JSON para ${target}. Mantenha as chaves, o sentido, nomes próprios, marcadores entre [colchetes] e as quebras de linha. Não traduza código.`,
+    "Responda só com o JSON traduzido, sem texto antes ou depois.",
+    "",
+    JSON.stringify(values, null, 2),
+  ].join("\n");
+
+  const btn = $("#translateBtn");
+  btn.textContent = "Traduzindo…";
+  await withAi(null, async (signal) => {
+    try {
+      const { text } = await askClaude({ input, signal, effort: "low", quick: true });
+      const translated = parseJson(text);
+      if (!translated || typeof translated !== "object") throw { code: "bad_json" };
+      const updates = {};
+      for (const f of fields) if (typeof translated[f] === "string") updates[f] = translated[f];
+      writeForm(forms[mode], updates);
+      render();
+      toast(outState[mode].detached ? "Campos traduzidos — volte a usar o formulário para atualizar o prompt" : "Campos traduzidos ✅");
+    } catch (e) {
+      if (e?.code !== "cancelled") toast(aiErrorText(e));
+    }
+  });
+  btn.textContent = "Traduzir campos com IA";
+}
+
+// ---------- Assistente ----------
+
+let questions = [];
+
+function setAssistantStatus(msg, isError = false) {
+  const el = $("#a-status");
+  el.textContent = msg;
+  el.classList.toggle("error", isError);
+}
+
+function renderQuestions() {
+  const list = $("#a-questionList");
+  list.replaceChildren();
+  questions.forEach((q, i) => {
+    const field = document.createElement("div");
+    field.className = "field";
+    const label = document.createElement("label");
+    label.htmlFor = `a-q${i}`;
+    label.textContent = q.question;
+    const input = document.createElement("textarea");
+    input.id = `a-q${i}`;
+    input.rows = 2;
+    input.placeholder = q.example ? `Ex.: ${q.example}` : "";
+    field.append(label, input);
+    list.append(field);
+  });
+  $("#a-questions").hidden = questions.length === 0;
+}
+
+function resetAssistant() {
+  questions = [];
+  renderQuestions();
+  $("#a-refine").hidden = true;
+  $("#a-reset").hidden = true;
+  $("#a-change").value = "";
+  setAssistantStatus("");
+}
+
+async function askQuestions() {
+  const idea = $("#a-idea").value.trim();
+  if (!idea) return toast("Descreva primeiro o que você quer");
+  resetAssistant();
+  setAssistantStatus("Pensando nas perguntas…");
+  await withAi("#a-stop", async (signal) => {
+    try {
+      const { text } = await askClaude({ input: questionsInstructions(assistantKind(), idea), signal, effort: "low", quick: true });
+      const parsed = parseJson(text);
+      const list = Array.isArray(parsed?.questions) ? parsed.questions : [];
+      questions = list
+        .filter((q) => q && typeof q.question === "string" && q.question.trim())
+        .slice(0, 4)
+        .map((q) => ({ question: q.question.trim(), example: typeof q.example === "string" ? q.example.trim() : "" }));
+      if (!questions.length) throw { code: "bad_json" };
+      renderQuestions();
+      $("#a-reset").hidden = false;
+      setAssistantStatus("");
+      $("#a-q0")?.focus();
+    } catch (e) {
+      if (e?.code === "cancelled") setAssistantStatus("Interrompido.");
+      else setAssistantStatus(aiErrorText(e), true);
+    }
+  });
+}
+
+// Escreve a resposta da IA direto no quadro "Seu prompt", aparecendo aos poucos.
+async function streamIntoOutput(input, doneMsg) {
+  const previous = output.value;
+  await withAi("#a-stop", async (signal) => {
+    try {
+      const { text, truncated } = await askClaude({
+        input,
+        signal,
+        effort: "medium",
+        onText: (t) => {
+          output.value = t;
+          updateCounter();
+        },
+      });
+      setOutput(text);
+      $("#a-refine").hidden = false;
+      $("#a-reset").hidden = false;
+      setAssistantStatus(truncated ? "Pronto, mas a resposta foi cortada por tamanho." : doneMsg);
+      if (window.innerWidth < 860) $(".output-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {
+      // Se não veio nada, devolve o prompt anterior em vez de deixar o quadro vazio.
+      setOutput(e?.text || previous);
+      if (e?.code === "cancelled") setAssistantStatus("Interrompido.");
+      else setAssistantStatus(aiErrorText(e), true);
+    }
+  });
+}
+
+async function buildFromAssistant(skipQuestions) {
+  const idea = $("#a-idea").value.trim();
+  if (!idea) return toast("Descreva primeiro o que você quer");
+  const qa = skipQuestions
+    ? []
+    : questions.map((q, i) => ({ question: q.question, answer: $(`#a-q${i}`)?.value.trim() || "" }));
+  setAssistantStatus("Escrevendo o prompt…");
+  await streamIntoOutput(buildInstructions(assistantKind(), idea, qa), "Pronto ✨ Copie, teste ou peça um ajuste.");
+}
+
+async function refineFromAssistant() {
+  const change = $("#a-change").value.trim();
+  if (!output.value.trim()) return toast("Gere um prompt primeiro");
+  if (!change) return toast("Diga o que quer mudar");
+  setAssistantStatus("Ajustando…");
+  await streamIntoOutput(refineInstructions(output.value.trim(), change), "Ajustado ✨");
+  $("#a-change").value = "";
 }
 
 // ---------- Configurações ----------
@@ -745,40 +1184,95 @@ for (const [m, form] of Object.entries(forms)) {
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => setMode(t.dataset.mode)));
 
 $("#presetSelect").addEventListener("change", (e) => {
-  const preset = PRESETS[mode][Number(e.target.value)];
-  if (!preset) return;
-  resetForm(forms[mode]);
-  writeForm(forms[mode], preset.values);
-  render();
-  e.target.value = "";
-  toast(`Modelo “${preset.name}” aplicado — troque o que está entre [colchetes]`);
+  const v = e.target.value;
+  if (v.startsWith("p:")) {
+    const preset = PRESETS[mode][Number(v.slice(2))];
+    e.target.value = "";
+    resetDeleteButton();
+    if (preset) applyPreset(preset.values, preset.name);
+  } else if (v.startsWith("u:")) {
+    const t = selectedTemplate();
+    resetDeleteButton();
+    if (t) applyPreset(t.values, t.name);
+  } else {
+    resetDeleteButton();
+  }
 });
+$("#saveTemplate").addEventListener("click", saveTemplate);
+$("#templateName").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") saveTemplate();
+});
+$("#deleteTemplate").addEventListener("click", deleteTemplate);
 
 $("#clearForm").addEventListener("click", () => {
   resetForm(forms[mode]);
+  outState[mode].detached = false;
   render();
 });
 
-output.addEventListener("input", updateCounter);
+output.addEventListener("input", () => {
+  outState[mode].text = output.value;
+  if (isFormMode()) outState[mode].detached = true;
+  updateCounter();
+  updateDetachedNotice();
+  saveOutState();
+});
+$("#reattachBtn").addEventListener("click", () => {
+  outState[mode].detached = false;
+  render();
+  toast("Prompt refeito a partir do formulário");
+});
+
 $("#copyBtn").addEventListener("click", () => copy(output.value));
 $("#saveBtn").addEventListener("click", saveToHistory);
 $("#downloadBtn").addEventListener("click", download);
 $("#improveBtn").addEventListener("click", improveWithAI);
+$("#testBtn").addEventListener("click", testPrompt);
+$("#translateBtn").addEventListener("click", translateFields);
 $("#stopAiBtn").addEventListener("click", () => stopCurrent?.());
 $("#copyAiBtn").addEventListener("click", () => copy($("#aiOutput").value));
 $("#useAiBtn").addEventListener("click", () => {
-  output.value = $("#aiOutput").value;
-  updateCounter();
+  setOutput($("#aiOutput").value, { detached: true });
   toast("Versão da IA aplicada");
 });
 $("#openSettings").addEventListener("click", openSettings);
+
+$("#a-start").addEventListener("click", askQuestions);
+$("#a-skip").addEventListener("click", () => buildFromAssistant(true));
+$("#a-build").addEventListener("click", () => buildFromAssistant(false));
+$("#a-refineBtn").addEventListener("click", refineFromAssistant);
+$("#a-stop").addEventListener("click", () => stopCurrent?.());
+$("#a-reset").addEventListener("click", () => {
+  resetAssistant();
+  $("#a-idea").value = "";
+  store.set("pm.assistant", { kind: assistantKind(), idea: "" });
+  setOutput("");
+  $("#a-idea").focus();
+});
+$("#a-idea").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) askQuestions();
+});
+for (const el of ["#a-idea", "#a-kind-text", "#a-kind-image"]) {
+  $(el).addEventListener("input", () => {
+    store.set("pm.assistant", { kind: assistantKind(), idea: $("#a-idea").value });
+    updateTestButton();
+  });
+}
+const savedAssistant = store.get("pm.assistant", {});
+if (savedAssistant.kind === "image") $("#a-kind-image").checked = true;
+if (typeof savedAssistant.idea === "string") $("#a-idea").value = savedAssistant.idea;
 
 if (inClaudeViewer) {
   // No claude.ai não há chave para configurar, e downloads por link não funcionam.
   $("#openSettings").hidden = true;
   $("#downloadBtn").hidden = true;
   samplePromise.then((sample) => {
-    if (!sample) $("#improveBtn").hidden = true;
+    if (sample) return;
+    aiUnavailable = true;
+    $("#improveBtn").hidden = true;
+    $("#translateBtn").hidden = true;
+    updateTestButton();
+    setAssistantStatus("A IA não está disponível nesta visualização. Use as abas Texto e Imagem.", true);
   });
 }
 
